@@ -14,7 +14,10 @@
 
 /****************************************************
  *  todo: debugging and profiling over usb or uart  *
- *  method to change beamforming angle over serial  *
+ *  method to change beamforming over serial        *
+ *  make a build and deploy system                  *
+ *  redo everything for the rp2350,misc chips etc   *
+ *  and an analog front end version                 *
  ****************************************************/
 
 /**********************************************
@@ -661,7 +664,7 @@ void init_dma() {
  **********************************************/
 const char *string_desc_arr[] = {
     (const char[]) {0x09, 0x04}, // Language ID
-    "Acme Systems",              // Manufacturer
+    "PC Labs",              // Manufacturer
     "Beamforming Mic Array",     // Product
     "123456",                    // Serial
     "Audio Interface",           // Interface
