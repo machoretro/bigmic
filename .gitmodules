@@ -1,7 +1,9 @@
 [submodule "pico-sdk"]
 	path = pico-sdk
 	url = https://github.com/raspberrypi/pico-sdk.git
+	branch = master
 
 [submodule "pico-sdk/lib/tinyusb"]
 	path = pico-sdk/lib/tinyusb
 	url = https://github.com/hathach/tinyusb.git
+	branch = master
