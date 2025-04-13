@@ -30,7 +30,6 @@
 #include "pico/float.h"
 #include "hardware/pio.h"
 #include "hardware/dma.h"
-#include "hardware/dsp.h"
 #include "hardware/clocks.h"
 #include "hardware/watchdog.h"
 #include "hardware/structs/bus_ctrl.h"
@@ -128,18 +127,22 @@ beamforming_config_t beam_config = {
 volatile bool usb_was_connected = false; // Connection state tracker
 static int32_t clip_lut[256];            // Soft clipping lookup table
 
-+/**********************************************
-+ *           Forward Declarations             *
-+ **********************************************/
-+void init_clip_lut(void);
-+void process_audio_buffer(void);
-+void handle_usb_status(void);
-+void reconfigure_dma(uint8_t buf_idx);
-+void init_dma(void);
-+void handle_buffer_rotation(uint32_t* last_usb, uint32_t* last_clock_check, uint32_t* last_usb_activity);
-+static inline int32_t constrain(int32_t value, int32_t min, int32_t max);
-+void i2s_program_init(PIO pio, uint sm, uint offset, uint data_pin, uint clock_pin_base, float clock_div, bool is_swapped);
-+
+/**********************************************
+ *           Forward Declarations             *
+ **********************************************/
+void init_clip_lut(void);
+void process_audio_buffer(void);
+void handle_usb_status(void);
+void reconfigure_dma(uint8_t buf_idx);
+void init_dma(void);
+void handle_buffer_rotation(uint32_t* last_usb, uint32_t* last_clock_check, uint32_t* last_usb_activity);
+static inline int32_t constrain(int32_t value, int32_t min, int32_t max);
+void i2s_program_init(PIO pio, uint sm, uint offset, uint data_pin, uint clock_pin_base, float clock_div, bool is_swapped);
+static inline int32_t saturate(int64_t value, int bits) {
+    int32_t max = (1 << (bits - 1)) - 1;
+    int32_t min = -(1 << (bits - 1));
+    return (value > max) ? max : (value < min) ? min : (int32_t)value;
+}
 /**********************************************
  *              PIO Assembly Code             *
  **********************************************/
@@ -448,7 +451,7 @@ void process_audio_buffer() {
             
             // Apply gain with saturation
             int64_t amplified = (int64_t)sample * channel_states[ch].gain;
-            sample = __SSAT(amplified >> 24, 24);
+            sample = saturate(amplified >> 24, 24);
             
             // Soft clipping
             uint8_t lut_index = ((sample >> 16) + 128) & 0xFF;
