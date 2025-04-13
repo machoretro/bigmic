@@ -30,6 +30,7 @@
 #include "pico/float.h"
 #include "hardware/pio.h"
 #include "hardware/dma.h"
+#include "hardware/dsp.h"
 #include "hardware/clocks.h"
 #include "hardware/watchdog.h"
 #include "hardware/structs/bus_ctrl.h"
@@ -38,7 +39,7 @@
 #include "class/audio/audio.h"  // Add TinyUSB audio class definitions
 #include <stdlib.h>  // For abs()
 #include <float.h>   // For FLT_MAX
-#include "cmsis/m0plus/cmsis_gcc.h"  // For __SSAT
+
 
 /**********************************************
  *            Hardware Configuration          *
