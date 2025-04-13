@@ -57,7 +57,7 @@
 #define MAX_BUFFER_FRAMES   256     // Maximum audio buffer size
 #define MIN_BUFFER_FRAMES   128     // Minimum audio buffer size
 #define WATCHDOG_TIMEOUT_MS 200     // Hardware watchdog timeout
-
+#define AUDIO_PROTOCOL_IP_VERSION_02_00 0x20 // UsbAudio 2.0
 /**********************************************
  *              Global State                  *
  **********************************************/
@@ -133,6 +133,7 @@ static int32_t clip_lut[256];            // Soft clipping lookup table
 void init_clip_lut(void);
 void process_audio_buffer(void);
 void handle_usb_status(void);
+void core1_entry(void);
 void reconfigure_dma(uint8_t buf_idx);
 void init_dma(void);
 void handle_buffer_rotation(uint32_t* last_usb, uint32_t* last_clock_check, uint32_t* last_usb_activity);
@@ -662,13 +663,14 @@ void init_dma() {
     // Load PIO program
     PIO pio = pio0;
     pio_program_t i2s_program = {
-        +        .instructions = i2s_pio_program_instructions,
-        +        .length = sizeof(i2s_pio_program_instructions) / sizeof(uint16_t),
-        +        .origin = -1  // Allocate automatically
-        +    };
-        +
-        +    uint offset = pio_add_program(pio, &i2s_program);
-        +
+                .instructions = i2s_pio_program_instructions,
+                .length = sizeof(i2s_pio_program_instructions) / sizeof(uint16_t),
+                .origin = -1  // Allocate automatically
+            };
+        
+            uint offset = pio_add_program(pio, &i2s_program);
+        
+    
     // Initialize both I2S channels
     i2s_program_init(pio, 0, offset, I2S0_DATA_PIN, I2S_SCK_PIN, pio_divider, false);
     i2s_program_init(pio, 1, offset, I2S1_DATA_PIN, I2S_SCK_PIN, pio_divider, true);
