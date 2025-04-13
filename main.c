@@ -35,6 +35,10 @@
 #include "hardware/structs/bus_ctrl.h"
 #include "hardware/irq.h"
 #include "tusb.h"
+#include "class/audio/audio.h"  // Add TinyUSB audio class definitions
+#include <stdlib.h>  // For abs()
+#include <float.h>   // For FLT_MAX
+#include "cmsis/m0plus/cmsis_gcc.h"  // For __SSAT
 
 /**********************************************
  *            Hardware Configuration          *
@@ -123,6 +127,18 @@ beamforming_config_t beam_config = {
 volatile bool usb_was_connected = false; // Connection state tracker
 static int32_t clip_lut[256];            // Soft clipping lookup table
 
++/**********************************************
++ *           Forward Declarations             *
++ **********************************************/
++void init_clip_lut(void);
++void process_audio_buffer(void);
++void handle_usb_status(void);
++void reconfigure_dma(uint8_t buf_idx);
++void init_dma(void);
++void handle_buffer_rotation(uint32_t* last_usb, uint32_t* last_clock_check, uint32_t* last_usb_activity);
++static inline int32_t constrain(int32_t value, int32_t min, int32_t max);
++void i2s_program_init(PIO pio, uint sm, uint offset, uint data_pin, uint clock_pin_base, float clock_div, bool is_swapped);
++
 /**********************************************
  *              PIO Assembly Code             *
  **********************************************/
@@ -330,7 +346,7 @@ const uint8_t desc_fs_configuration[] = {
     TUD_AUDIO_DESC_CS_AS_ISO_EP(
         0x00,           // bmAttributes (None)
         0x00,           // bmControls (None)
-        0x00,           // bLockDelayUnits
+        0x00,           // bLockDelayUnits 
         0x0000          // wLockDelay
     )
 };
@@ -581,7 +597,7 @@ static inline int32_t constrain(int32_t value, int32_t min, int32_t max) {
     return (value < min) ? min : (value > max) ? max : value;
 }
 
-static void handle_buffer_rotation(uint32_t* last_usb, 
+void handle_buffer_rotation(uint32_t* last_usb, 
                                   uint32_t* last_clock_check,
                                   uint32_t* last_usb_activity) {
     uint32_t buffer_time_us = (g_buffer_frames * 1000000) / SAMPLE_RATE;
@@ -601,6 +617,10 @@ static void handle_buffer_rotation(uint32_t* last_usb,
         }
 
         // USB transfer
+        // If your TinyUSB doesn't have these functions, you might need to use:
+        // tud_cdc_n_available and tud_cdc_n_write instead
+        // OR update your TinyUSB to a version that supports the Audio class
+        // For now, trying with the existing functions:
         if(tud_audio_n_available(0) && tud_mounted()) {
             tud_audio_n_write(0, (uint8_t*)buffers[active_usb_buf].samples,
                 buffers[active_usb_buf].actual_frames * NUM_CHANNELS * (BIT_DEPTH/8));
@@ -637,8 +657,14 @@ void init_dma() {
     
     // Load PIO program
     PIO pio = pio0;
-    uint offset = pio_add_program(pio, i2s_pio_program_instructions);
-    
+    pio_program_t i2s_program = {
+        +        .instructions = i2s_pio_program_instructions,
+        +        .length = sizeof(i2s_pio_program_instructions) / sizeof(uint16_t),
+        +        .origin = -1  // Allocate automatically
+        +    };
+        +
+        +    uint offset = pio_add_program(pio, &i2s_program);
+        +
     // Initialize both I2S channels
     i2s_program_init(pio, 0, offset, I2S0_DATA_PIN, I2S_SCK_PIN, pio_divider, false);
     i2s_program_init(pio, 1, offset, I2S1_DATA_PIN, I2S_SCK_PIN, pio_divider, true);
