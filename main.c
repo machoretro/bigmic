@@ -34,6 +34,13 @@
  #include "hardware/watchdog.h"
  #include "hardware/structs/bus_ctrl.h"
  #include "hardware/irq.h"
+ 
+//TinyUSB configuration - BEFORE including tusb.h
+#ifndef CFG_TUD_AUDIO
+#define CFG_TUD_AUDIO 1
+#endif
+#define CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_TX 3  // 24-bit audio = 3 bytes
+
  #include "tusb.h"
  #include "class/audio/audio.h"  // Add TinyUSB audio class definitions
  #include <stdlib.h>  // For abs()
