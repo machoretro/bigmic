@@ -35,20 +35,37 @@
  #include "hardware/structs/bus_ctrl.h"
  #include "hardware/irq.h"
 
-//TinyUSB configuration - BEFORE including tusb.h
+// TinyUSB configuration - MUST come BEFORE including tusb.h
 #ifndef CFG_TUD_AUDIO
 #define CFG_TUD_AUDIO 1
 #endif
 
 #define CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_TX 3  // 24-bit audio = 3 bytes
-#define CFG_TUD_AUDIO_FUNC_1_N_AS_INT 1
+#define CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX 1  // Single channel output
+#define CFG_TUD_AUDIO_FUNC_1_N_AS_INT 1  // Number of AS interfaces
+
+// Control buffer size
 #define CFG_TUD_AUDIO_FUNC_1_CTRL_BUF_SZ 64
-#define CFG_TUD_AUDIO_FUNC_1_DESC_LEN (TUD_AUDIO_DESC_IAD_LEN + TUD_AUDIO_DESC_STD_AC_LEN(1) + TUD_AUDIO_DESC_CS_AC_LEN + TUD_AUDIO_DESC_INPUT_TERM_LEN + TUD_AUDIO_DESC_FEATURE_UNIT_LEN(4) + TUD_AUDIO_DESC_OUTPUT_TERM_LEN + TUD_AUDIO_DESC_STD_AS_INT_LEN + TUD_AUDIO_DESC_CS_AS_INT_LEN + TUD_AUDIO_DESC_TYPE_I_FORMAT_LEN + TUD_AUDIO_DESC_STD_AS_ISO_EP_LEN + TUD_AUDIO_DESC_CS_AS_ISO_EP_LEN)
- #include "tusb.h"
- #include "class/audio/audio.h"  // Add TinyUSB audio class definitions
- #include <stdlib.h>  // For abs()
- #include <float.h>   // For FLT_MAX
- 
+
+// Define the audio descriptor length
+#define CFG_TUD_AUDIO_FUNC_1_DESC_LEN (TUD_AUDIO_DESC_IAD_LEN + \
+    TUD_AUDIO_DESC_STD_AC_LEN(1) + \
+    TUD_AUDIO_DESC_CS_AC_LEN + \
+    TUD_AUDIO_DESC_CLOCK_SRC_LEN + \
+    TUD_AUDIO_DESC_INPUT_TERM_LEN + \
+    TUD_AUDIO_DESC_FEATURE_UNIT_LEN(4) + \
+    TUD_AUDIO_DESC_OUTPUT_TERM_LEN + \
+    TUD_AUDIO_DESC_STD_AS_INT_LEN*2 + \
+    TUD_AUDIO_DESC_CS_AS_INT_LEN + \
+    TUD_AUDIO_DESC_TYPE_I_FORMAT_LEN + \
+    TUD_AUDIO_DESC_STD_AS_ISO_EP_LEN + \
+    TUD_AUDIO_DESC_CS_AS_ISO_EP_LEN)
+
+// Include TinyUSB after defining all required configurations
+#include "tusb.h"
+#include "class/audio/audio.h"  // Add TinyUSB audio class definitions
+#include <stdlib.h>  // For abs()
+#include <float.h>   // For FLT_MAX
  
  /**********************************************
   *            Hardware Configuration          *
@@ -138,7 +155,15 @@
   **********************************************/
  #define CFG_TUD_AUDIO 1
  #define CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_TX 3  // 24-bit audio = 3 bytes
- 
+
+ // String descriptors
+static const char* const string_desc_arr[] = {
+    "PC Labs",              // 0: Manufacturer
+    "Beamforming Mic Array", // 1: Product
+    "123456",               // 2: Serial number
+    "Audio Interface"       // 3: Interface
+};
+
  volatile bool usb_was_connected = false; // Connection state tracker
  static int32_t clip_lut[256];            // Soft clipping lookup table
  
@@ -274,25 +299,26 @@
  #define USB_PID (0x4000 | _PID_MAP(CDC, 0) | _PID_MAP(MSC, 1) | _PID_MAP(HID, 2) | \
                   _PID_MAP(MIDI, 3) | _PID_MAP(VENDOR, 4) | _PID_MAP(AUDIO, 5))
  
- tusb_desc_device_t const desc_device = {
-     .bLength            = sizeof(tusb_desc_device_t),
-     .bDescriptorType    = TUSB_DESC_DEVICE,
-     .bcdUSB             = 0x0200,
- 
-     // Use Audio class for Audio v2.0
-     .bDeviceClass       = TUSB_CLASS_MISC,
-     .bDeviceSubClass    = MISC_SUBCLASS_COMMON,
-     .bDeviceProtocol    = MISC_PROTOCOL_IAD,
- 
-     .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
-     .idVendor           = 0xCAFE,
-     .idProduct          = USB_PID,
-     .bcdDevice          = 0x0100,
-     .iManufacturer      = 0x01,
-     .iProduct           = 0x02,
-     .iSerialNumber      = 0x03,
-     .bNumConfigurations = 0x01
- };
+// USB device descriptor
+tusb_desc_device_t const desc_device = {
+    .bLength            = sizeof(tusb_desc_device_t),
+    .bDescriptorType    = TUSB_DESC_DEVICE,
+    .bcdUSB             = 0x0200,
+
+    // Use Audio class for Audio v2.0
+    .bDeviceClass       = TUSB_CLASS_MISC,
+    .bDeviceSubClass    = MISC_SUBCLASS_COMMON,
+    .bDeviceProtocol    = MISC_PROTOCOL_IAD,
+
+    .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
+    .idVendor           = 0xCAFE,
+    .idProduct          = USB_PID,
+    .bcdDevice          = 0x0100,
+    .iManufacturer      = 0x01,
+    .iProduct           = 0x02,
+    .iSerialNumber      = 0x03,
+    .bNumConfigurations = 0x01
+};
  
  #define TUD_AUDIO_DESC_LEN_TOTAL (TUD_AUDIO_DESC_IAD_LEN + TUD_AUDIO_DESC_STD_AC_LEN(1) + \
          TUD_AUDIO_DESC_CS_AC_LEN + TUD_AUDIO_DESC_INPUT_TERM_LEN + TUD_AUDIO_DESC_FEATURE_UNIT_LEN(4) + \
@@ -300,115 +326,130 @@
          TUD_AUDIO_DESC_TYPE_I_FORMAT_LEN + TUD_AUDIO_DESC_STD_AS_ISO_EP_LEN + TUD_AUDIO_DESC_CS_AS_ISO_EP_LEN)
 
 
- static const uint8_t desc_fs_configuration[] = {
-     // Configuration Descriptor (9 bytes)
-     TUD_CONFIG_DESCRIPTOR(
-         2,    // bNumInterfaces (1 Control + 1 Streaming)
-         1,    // Configuration number
-         0,    // String index
-         TUD_CONFIG_DESC_LEN + TUD_AUDIO_DESC_LEN_TOTAL,
-         0x00, // bmAttributes
-         100   // mA current
-     ),
- 
-     // Audio Control Interface
-     TUD_AUDIO_DESC_STD_AC(
-         0,    // Interface number
-         0,    // String index
-         1     // Number of streaming interfaces
-     ),
- 
-     // Class-Specific AC Interface Header (10 bytes)
-     TUD_AUDIO_DESC_CS_AC(
-         0x0200,          // bcdADC (Audio 2.0)
-         0x40,           // Category: Microphone
-         0x0038,         // wTotalLength (56 bytes)
-         0x01            // bmControls (Clock Frequency Control)
-     ),
- 
-     // Input Terminal (12 bytes)
-     TUD_AUDIO_DESC_INPUT_TERM(
-         0x01,           // bTerminalID
-         AUDIO_TERM_TYPE_USB_STREAMING,
-         0x00,           // bAssocTerminal
-         0x04,           // bNrChannels (4 channels)
-         0x0000003F,     // wChannelConfig (channels 1-6)
-         0x00,           // iChannelNames
-         0x0000          // bmControls
-     ),
- 
-     // Feature Unit (13 bytes per channel)
-     TUD_AUDIO_DESC_FEATURE_UNIT(
-         0x02,           // bUnitID
-         0x01,           // bSourceID
-         0x01, 0x02, 0x02, 0x02, 0x02, // bmaControls (Master + 4 channels)
-         0x00            // iFeature
-     ),
- 
-     // Output Terminal (9 bytes)
-     TUD_AUDIO_DESC_OUTPUT_TERM(
-         0x03,           // bTerminalID
-         AUDIO_TERM_TYPE_OUT_HEADPHONES,
-         0x02,           // bSourceID
-         0x0000,         // bmControls
-         0x00            // iTerminal
-     ),
- 
-     // Audio Streaming Interface
-     TUD_AUDIO_DESC_STD_AS_INT(
-         1,              // bInterfaceNumber
-         0,              // bAlternateSetting
-         0,              // bNumEndpoints
-         AUDIO_FUNCTION_PROTOCOL_CODE_UNDEF,  // bInterfaceProtocol
-         0               // iInterface
-     ),
- 
-     // Audio Streaming Interface (Alt 1)
-     TUD_AUDIO_DESC_STD_AS_INT(
-         1,              // bInterfaceNumber
-         1,              // bAlternateSetting - Alt 1 has active endpoint
-         1,              // bNumEndpoints
-         AUDIO_FUNCTION_PROTOCOL_CODE_UNDEF,  // bInterfaceProtocol
-         0               // iInterface
-     ),
- 
-     // CS Interface AS - General
-     TUD_AUDIO_DESC_CS_AS_INT(
-         2,              // bTerminalLink - to Output Terminal ID
-         0,              // bmControls
-         AUDIO_FORMAT_TYPE_I,  // bFormatType
-         AUDIO_DATA_FORMAT_TYPE_I_PCM,  // bSubslotSize - 24 bit PCM
-         BIT_DEPTH,      // bBitResolution
-         1               // bNumChannels
-     ),
- 
-     // Type I Format Type (6 + 3*1 = 9 bytes)
-     TUD_AUDIO_DESC_TYPE_I_FORMAT(
-         1,              // bNrChannels
-         CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_TX,  // bSubSlotSize
-         BIT_DEPTH,      // bBitResolution
-         1,              // bSamFreqType (number of sampling frequencies)
-         SAMPLE_RATE     // Sample rate
-     ),
- 
-     // Standard AS Isochronous Endpoint (7 bytes)
-     TUD_AUDIO_DESC_STD_AS_ISO_EP(
-         0x81,           // bEndpointAddress
-         AUDIO_CS_AS_ISO_DATA_EP_ATT_ADAPTIVE,  // bmAttributes
-         192,            // wMaxPacketSize - enough for 1ms of 48kHz stereo 24-bit samples
-         1,              // bInterval (1ms)
-         0               // bRefresh
-     ),
- 
-     // Class-Specific AS Isochronous Endpoint (4 bytes)
-     TUD_AUDIO_DESC_CS_AS_ISO_EP(
-         AUDIO_CS_AS_ISO_DATA_EP_ATT_NONE,  // bmAttributes
-         AUDIO_CS_AS_GEN_CONTROL_UNDEFINED,  // bmControls
-         0,              // bLockDelayUnits
-         0               // wLockDelay
-     ),
- };
- 
+// USB Audio Class 2.0 Descriptors
+static const uint8_t desc_fs_configuration[] = {
+    // Configuration Descriptor (9 bytes)
+    TUD_CONFIG_DESCRIPTOR(
+        2,    // bNumInterfaces (1 Control + 1 Streaming)
+        1,    // Configuration number
+        0,    // String index
+        TUD_CONFIG_DESC_LEN + CFG_TUD_AUDIO_FUNC_1_DESC_LEN,
+        0x00, // bmAttributes
+        100   // mA current
+    ),
+
+    // IAD for Audio Function
+    TUD_AUDIO_DESC_IAD(0, 2, AUDIO_FUNCTION_PROTOCOL_CODE_UNDEF),
+
+    // Audio Control Interface
+    TUD_AUDIO_DESC_STD_AC(
+        0,    // Interface number
+        0,    // String index
+        1     // Number of streaming interfaces
+    ),
+
+    // Class-Specific AC Interface Header (9 bytes)
+    TUD_AUDIO_DESC_CS_AC(
+        0x0200,                // bcdADC (Audio 2.0)
+        AUDIO_FUNC_MICROPHONE, // bCategory
+        16,                    // wTotalLength (Approximate)
+        0x01                   // bmControls (Clock Frequency Control)
+    ),
+
+    // Clock Source Descriptor (required for UAC 2.0)
+    TUD_AUDIO_DESC_CLK_SRC(
+        0x01,           // bClockID
+        0x03,           // bmAttributes (internal fixed clock)
+        0x01,           // bmControls (Clock Frequency Control)
+        0x00,           // bAssocTerminal
+        0x00            // iClockSource
+    ),
+
+    // Input Terminal (12 bytes)
+    TUD_AUDIO_DESC_INPUT_TERM(
+        0x02,           // bTerminalID
+        AUDIO_TERM_TYPE_USB_STREAMING,
+        0x00,           // bAssocTerminal
+        0x04,           // bNrChannels (4 channels)
+        0x0000003F,     // wChannelConfig (channels 1-6)
+        0x00,           // iChannelNames
+        0x0000,         // bmControls
+        0x00            // iTerminal
+    ),
+
+    // Feature Unit (13 bytes per channel)
+    TUD_AUDIO_DESC_FEATURE_UNIT(
+        0x03,           // bUnitID
+        0x02,           // bSourceID
+        0x01, 0x02, 0x02, 0x02, 0x02, // bmaControls (Master + 4 channels)
+        0x00            // iFeature
+    ),
+
+    // Output Terminal (9 bytes)
+    TUD_AUDIO_DESC_OUTPUT_TERM(
+        0x04,           // bTerminalID
+        AUDIO_TERM_TYPE_OUT_HEADPHONES,
+        0x03,           // bSourceID
+        0x01,           // bSourceID for clock
+        0x0000,         // bmControls
+        0x00            // iTerminal
+    ),
+
+    // Audio Streaming Interface (Alt 0 - inactive)
+    TUD_AUDIO_DESC_STD_AS_INT(
+        1,              // bInterfaceNumber
+        0,              // bAlternateSetting
+        0,              // bNumEndpoints
+        AUDIO_FUNCTION_PROTOCOL_CODE_UNDEF,  // bInterfaceProtocol
+        0               // iInterface
+    ),
+
+    // Audio Streaming Interface (Alt 1 - active)
+    TUD_AUDIO_DESC_STD_AS_INT(
+        1,              // bInterfaceNumber
+        1,              // bAlternateSetting - Alt 1 has active endpoint
+        1,              // bNumEndpoints
+        AUDIO_FUNCTION_PROTOCOL_CODE_UNDEF,  // bInterfaceProtocol
+        0               // iInterface
+    ),
+
+    // CS Interface AS General
+    TUD_AUDIO_DESC_CS_AS_INT(
+        0x02,           // bTerminalLink - to Output Terminal ID
+        0x00,           // bmControls
+        AUDIO_FORMAT_TYPE_I,  // bFormatType
+        AUDIO_DATA_FORMAT_TYPE_I_PCM,  // bSubslotSize - 24 bit PCM
+        BIT_DEPTH,      // bBitResolution
+        1               // bNrChannels
+    ),
+
+    // Type I Format Type Descriptor
+    TUD_AUDIO_DESC_TYPE_I_FORMAT(
+        1,              // bNrChannels
+        CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_TX,  // bSubSlotSize
+        BIT_DEPTH,      // bBitResolution
+        1,              // bSamFreqType (number of sampling frequencies)
+        SAMPLE_RATE     // Sample rate
+    ),
+
+    // Standard AS Isochronous Audio Data Endpoint Descriptor
+    TUD_AUDIO_DESC_STD_AS_ISO_EP(
+        0x81,           // bEndpointAddress
+        AUDIO_CS_AS_ISO_DATA_EP_ATT_ADAPTIVE,  // bmAttributes
+        192,            // wMaxPacketSize - enough for 1ms of 48kHz stereo 24-bit samples
+        1,              // bInterval (1ms)
+        0               // bRefresh
+    ),
+
+    // Class-Specific AS Isochronous Audio Data Endpoint Descriptor
+    TUD_AUDIO_DESC_CS_AS_ISO_EP(
+        AUDIO_CS_AS_ISO_DATA_EP_ATT_NONE,  // bmAttributes
+        AUDIO_CONTROL_UNDEFINED,           // bmControls
+        0,              // bLockDelayUnits
+        0               // wLockDelay
+    ),
+};
+
  uint8_t const * tud_descriptor_device_cb(void)
  {
      return (uint8_t const *) &desc_device;
