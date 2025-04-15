@@ -34,13 +34,16 @@
  #include "hardware/watchdog.h"
  #include "hardware/structs/bus_ctrl.h"
  #include "hardware/irq.h"
- 
+
 //TinyUSB configuration - BEFORE including tusb.h
 #ifndef CFG_TUD_AUDIO
 #define CFG_TUD_AUDIO 1
 #endif
-#define CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_TX 3  // 24-bit audio = 3 bytes
 
+#define CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_TX 3  // 24-bit audio = 3 bytes
+#define CFG_TUD_AUDIO_FUNC_1_N_AS_INT 1
+#define CFG_TUD_AUDIO_FUNC_1_CTRL_BUF_SZ 64
+#define CFG_TUD_AUDIO_FUNC_1_DESC_LEN (TUD_AUDIO_DESC_IAD_LEN + TUD_AUDIO_DESC_STD_AC_LEN(1) + TUD_AUDIO_DESC_CS_AC_LEN + TUD_AUDIO_DESC_INPUT_TERM_LEN + TUD_AUDIO_DESC_FEATURE_UNIT_LEN(4) + TUD_AUDIO_DESC_OUTPUT_TERM_LEN + TUD_AUDIO_DESC_STD_AS_INT_LEN + TUD_AUDIO_DESC_CS_AS_INT_LEN + TUD_AUDIO_DESC_TYPE_I_FORMAT_LEN + TUD_AUDIO_DESC_STD_AS_ISO_EP_LEN + TUD_AUDIO_DESC_CS_AS_ISO_EP_LEN)
  #include "tusb.h"
  #include "class/audio/audio.h"  // Add TinyUSB audio class definitions
  #include <stdlib.h>  // For abs()
@@ -294,11 +297,10 @@
  #define TUD_AUDIO_DESC_LEN_TOTAL (TUD_AUDIO_DESC_IAD_LEN + TUD_AUDIO_DESC_STD_AC_LEN(1) + \
          TUD_AUDIO_DESC_CS_AC_LEN + TUD_AUDIO_DESC_INPUT_TERM_LEN + TUD_AUDIO_DESC_FEATURE_UNIT_LEN(4) + \
          TUD_AUDIO_DESC_OUTPUT_TERM_LEN + TUD_AUDIO_DESC_STD_AS_INT_LEN + TUD_AUDIO_DESC_CS_AS_INT_LEN + \
-         TUD_AUDIO_DESC_TYPE_I_FORMAT_LEN + 
-         TUD_AUDIO_DESC_STD_AS_ISO_EP_LEN + 
-         TUD_AUDIO_DESC_CS_AS_ISO_EP_LEN,
- 
- const uint8_t desc_fs_configuration[] = {
+         TUD_AUDIO_DESC_TYPE_I_FORMAT_LEN + TUD_AUDIO_DESC_STD_AS_ISO_EP_LEN + TUD_AUDIO_DESC_CS_AS_ISO_EP_LEN)
+
+
+ static const uint8_t desc_fs_configuration[] = {
      // Configuration Descriptor (9 bytes)
      TUD_CONFIG_DESCRIPTOR(
          2,    // bNumInterfaces (1 Control + 1 Streaming)
@@ -816,4 +818,3 @@
      reconfigure_dma(active_dma_buf);
  }
  
- const char *string_desc_arr[] = {"PC Labs", "Beamforming Mic Array", "123456", "Audio Interface"};
