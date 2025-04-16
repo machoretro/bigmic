@@ -61,6 +61,8 @@
     TUD_AUDIO_DESC_STD_AS_ISO_EP_LEN + \
     TUD_AUDIO_DESC_CS_AS_ISO_EP_LEN)
 
+#define CFG_TUD_AUDIO_ENABLE_FEEDBACK 1
+
 // Include TinyUSB after defining all required configurations
 #include "tusb.h"
 #include "class/audio/audio.h"  // Add TinyUSB audio class definitions
@@ -382,7 +384,8 @@ static const uint8_t desc_fs_configuration[] = {
     TUD_AUDIO_DESC_FEATURE_UNIT(
         0x03,           // bUnitID
         0x02,           // bSourceID
-        0x01, 0x02, 0x02, 0x02, 0x02, // bmaControls
+        4,              // Number of channels (including master)
+        0x01, 0x00, 0x00, 0x00, 0x00, // Master + 4 channel controls
         0x00            // iFeature (string index)
     ),
 
@@ -390,6 +393,7 @@ static const uint8_t desc_fs_configuration[] = {
     TUD_AUDIO_DESC_OUTPUT_TERM(
         0x04,           // bTerminalID
         AUDIO_TERM_TYPE_OUT_HEADPHONES,
+        0x00,           // bAssocTerm
         0x03,           // bSourceID
         0x01,           // bCSourceID (clock source)
         0x0000,         // bmControls
@@ -426,12 +430,12 @@ static const uint8_t desc_fs_configuration[] = {
 
     // Type I Format Type Descriptor
     TUD_AUDIO_DESC_TYPE_I_FORMAT(
-        1,              // bNrChannels
-        CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_TX,  // bSubSlotSize
-        BIT_DEPTH,      // bBitResolution
-        1,              // bSamFreqType (number of sampling frequencies)
-        SAMPLE_RATE     // Sample rate
+        CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_TX,  // bSubslotSize
+        BIT_DEPTH      // bBitResolution
     ),
+    
+    // Add separate sampling frequency descriptor
+    TUD_AUDIO_DESC_SAMPLE_RATE(SAMPLE_RATE, SAMPLE_RATE),
 
     // Standard AS Isochronous Audio Data Endpoint Descriptor
     TUD_AUDIO_DESC_STD_AS_ISO_EP(
@@ -443,7 +447,7 @@ static const uint8_t desc_fs_configuration[] = {
 
     // Class-Specific AS Isochronous Audio Data Endpoint Descriptor
     TUD_AUDIO_DESC_CS_AS_ISO_EP(
-        AUDIO_CS_AS_ISO_DATA_EP_ATT_ADAPTIVE,  // bmAttributes
+        AUDIO_CS_AS_ISO_DATA_EP_ATT_ADAPTIVE_SYNC,  // bmAttributes
         AUDIO_CTRL_NONE,       // bmControls
         0,                     // bLockDelayUnit
         0                      // wLockDelay
