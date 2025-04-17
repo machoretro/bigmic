@@ -35,37 +35,169 @@
  #include "hardware/structs/bus_ctrl.h"
  #include "hardware/irq.h"
 
-// TinyUSB configuration - MUST come BEFORE including tusb.h
+// 1) Define TinyUSB audio config before including tusb.h:
 #ifndef CFG_TUD_AUDIO
-#define CFG_TUD_AUDIO 1
+#define CFG_TUD_AUDIO                 1
+#define CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_TX  3   // 24‑bit
+#define CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX          1   // mono
+#define CFG_TUD_AUDIO_FUNC_1_CTRL_BUF_SZ           64
 #endif
 
-#define CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_TX 3  // 24-bit audio = 3 bytes
-#define CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX 1  // Single channel output
-#define CFG_TUD_AUDIO_FUNC_1_N_AS_INT 1  // Number of AS interfaces
+#include "tusb.h"
+#include "class/audio/audio_device.h"  // use the device‑side audio macros
 
-// Control buffer size
-#define CFG_TUD_AUDIO_FUNC_1_CTRL_BUF_SZ 64
-
-// Define the audio descriptor length
-#define CFG_TUD_AUDIO_FUNC_1_DESC_LEN (TUD_AUDIO_DESC_IAD_LEN + \
-    TUD_AUDIO_DESC_STD_AC_LEN + \
-    TUD_AUDIO_DESC_CS_AC_LEN + \
-    TUD_AUDIO_DESC_CLK_SRC_LEN + \
+// 2) Compute total descriptor length at compile time:
+#define UAC2_AC_DESC_LEN  ( \
+    TUD_AUDIO_DESC_IAD_LEN        + \
+    TUD_AUDIO_DESC_STD_AC_LEN     + \
+    TUD_AUDIO_DESC_CS_AC_LEN      + \
+    TUD_AUDIO_DESC_CLK_SRC_LEN    + \
     TUD_AUDIO_DESC_INPUT_TERM_LEN + \
-    TUD_AUDIO_DESC_FEATURE_UNIT_LEN(4) + \
-    TUD_AUDIO_DESC_OUTPUT_TERM_LEN + \
+    /* feature unit: master + 1 channel = 2 controls */ \
+    TUD_AUDIO_DESC_FEATURE_UNIT_LEN(2) + \
+    TUD_AUDIO_DESC_OUTPUT_TERM_LEN \
+)
+
+#define UAC2_AS_DESC_LEN  ( \
+    /* two alt‑settings: zero BW + active */  \
     TUD_AUDIO_DESC_STD_AS_INT_LEN*2 + \
-    TUD_AUDIO_DESC_CS_AS_INT_LEN + \
+    TUD_AUDIO_DESC_CS_AS_INT_LEN    + \
     TUD_AUDIO_DESC_TYPE_I_FORMAT_LEN + \
     TUD_AUDIO_DESC_STD_AS_ISO_EP_LEN + \
-    TUD_AUDIO_DESC_CS_AS_ISO_EP_LEN)
+    TUD_AUDIO_DESC_CS_AS_ISO_EP_LEN \
+)
 
-#define CFG_TUD_AUDIO_ENABLE_FEEDBACK 1
+#define TOTAL_DESC_LEN (TUD_CONFIG_DESC_LEN + UAC2_AC_DESC_LEN + UAC2_AS_DESC_LEN)
 
-// Include TinyUSB after defining all required configurations
-#include "tusb.h"
-#include "class/audio/audio.h"  // Add TinyUSB audio class definitions
+static const uint8_t desc_fs_configuration[] = {
+    // — Standard config descriptor
+    TUD_CONFIG_DESCRIPTOR(
+        /*interfaces=*/2,            // audio control + audio streaming
+        /*config*/      1,
+        /*string_idx*/  0,
+        /*total_len*/   TOTAL_DESC_LEN,
+        /*attr*/        0x00,
+        /*mA*/          100
+    ),
+
+    // — Audio Function IAD (use the UAC2 protocol code)
+    TUD_AUDIO_DESC_IAD(
+        /*first_if*/    0,
+        /*count*/       1,
+        /*proto*/       AUDIO_FUNC_PROTOCOL_CODE_V2
+    ),
+
+    // — Standard Audio Control interface
+    TUD_AUDIO_DESC_STD_AC(
+        /*if*/           0,
+        /*string_idx*/   0,
+        /*stream_if_count*/ 1
+    ),
+
+    // — Class‑specific AC header for UAC2 (bcdADC = 2.00)
+    TUD_AUDIO_DESC_CS_AC(
+        /*bcdADC*/       0x0200,
+        /*category*/     AUDIO_FUNC_MICROPHONE,
+        /*total_len*/    UAC2_AC_DESC_LEN - TUD_AUDIO_DESC_IAD_LEN - TUD_AUDIO_DESC_STD_AC_LEN,
+        /*ctrl*/         0x01         // clock freq control
+    ),
+
+    // — Clock Source
+    TUD_AUDIO_DESC_CLK_SRC(
+        /*clkid*/        0x01,
+        /*attr*/         AC_ATTR_INTERNAL_FIXED,
+        /*ctrl*/         AC_CTRL_SAM_FREQ,
+        /*assocTerm*/    0x00,
+        /*stridx*/       0x00
+    ),
+
+    // — Input Term (USB streaming)
+    TUD_AUDIO_DESC_INPUT_TERM(
+        /*termid*/       0x02,
+        /*termType*/     TERM_TYPE_USB_STREAMING,
+        /*assocTerm*/    0x00,
+        /*clkSrc*/       0x01,
+        /*nChannels*/    1,
+        /*chConfig*/     0x0001,
+        /*stridx*/       0x00,
+        /*ctrl*/         0x00,
+        /*stridxTerm*/   0x00
+    ),
+
+    // — Feature Unit (master + 1 channel = 2 total channels)
+    TUD_AUDIO_DESC_FEATURE_UNIT(
+        /*unitid*/       0x03,
+        /*src*/          0x02,
+        /*ctrlSize*/     2,              // two control bytes: master & channel‑1
+        /*controls*/     0x0001,         // mute control on master only
+        /*stridx*/       0x00
+    ),
+
+    // — Output Term (to speaker/headset)
+    TUD_AUDIO_DESC_OUTPUT_TERM(
+        /*termid*/       0x04,
+        /*termType*/     TERM_TYPE_OUT_HEADPHONES,
+        /*assocTerm*/    0x00,
+        /*src*/          0x03,
+        /*clkSrc*/       0x01,
+        /*ctrl*/         0x00,
+        /*stridx*/       0x00
+    ),
+
+    // — Standard AS interface, alt‑0 (zero bandwidth)
+    TUD_AUDIO_DESC_STD_AS_INT(
+        /*if*/           1,
+        /*alt*/          0,
+        /*nEP*/          0,
+        /*stridx*/       0
+    ),
+
+    // — Standard AS interface, alt‑1 (active streaming)
+    TUD_AUDIO_DESC_STD_AS_INT(
+        /*if*/           1,
+        /*alt*/          1,
+        /*nEP*/          1,
+        /*stridx*/       0
+    ),
+
+    // — Class‑specific AS interface header
+    TUD_AUDIO_DESC_CS_AS_INT(
+        /*termLink*/     0x02,
+        /*ctrl*/         0x00,
+        /*format*/       AUDIO_FORMAT_TYPE_I,
+        /*subslot*/      AUDIO_DATA_FORMAT_TYPE_I_PCM,
+        /*nChannels*/    1,
+        /*chConfig*/     0x0001,
+        /*stridx*/       0x00
+    ),
+
+    // — Type I PCM format
+    TUD_AUDIO_DESC_TYPE_I_FORMAT(
+        /*subslotSize*/  3,           // bytes per sample
+        /*bitResolution*/24
+    ),
+
+    // — Sampling frequency descriptor
+    TUD_AUDIO_DESC_SAMPLE_RATE(
+        SAMPLE_RATE, SAMPLE_RATE
+    ),
+
+    // — Standard isochronous endpoint, IN endpoint 0x81
+    TUD_AUDIO_DESC_STD_AS_ISO_EP(
+        /*ep_addr*/      0x81,
+        /*attr*/         TUSB_XFER_ISOCHRONOUS,
+        /*maxsize*/      (CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_TX * SAMPLE_RATE / 1),
+        /*interval*/     1
+    ),
+
+    // — Class‑specific endpoint descriptor
+    TUD_AUDIO_DESC_CS_AS_ISO_EP(
+        /*attr*/         AUDIO_CS_AS_ISO_DATA_EP_ATT_ADAPTIVE_SYNC,
+        /*ctrl*/         AUDIO_CTRL_NONE,
+        /*lockDelayUnit*/0,
+        /*lockDelay*/    0
+    ),
+};
 #include <stdlib.h>  // For abs()
 #include <float.h>   // For FLT_MAX
  

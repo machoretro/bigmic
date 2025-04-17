@@ -38,6 +38,8 @@ target_link_libraries(bigmic
     hardware_irq
     hardware_clocks
     pico_multicore
+    tinyusb_device    # <<< link in TinyUSB device core
+    tinyusb_board     # <<< board‑specific USB glue (RP2040)
 )
 
 # Generate additional output files (.uf2, .bin, etc.)
