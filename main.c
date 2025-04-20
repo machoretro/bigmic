@@ -34,91 +34,9 @@
  #include "hardware/watchdog.h"
  #include "hardware/structs/bus_ctrl.h"
  #include "hardware/irq.h"
-
-// ───────────────────────────────────────────────────────────────────────────
-//                       TinyUSB Audio Configuration
-// ───────────────────────────────────────────────────────────────────────────
-
-// Tell TinyUSB we’re an Audio device, mono, 24‑bit, 64‑byte control buffer
-#ifndef CFG_TUD_AUDIO
-#define CFG_TUD_AUDIO                         1
-#define CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_TX  3
-#define CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX          1
-#define CFG_TUD_AUDIO_FUNC_1_CTRL_BUF_SZ           64
-#endif
-
-#include "tusb.h"
-
-// ── Compute our entire Audio‑function descriptor length at compile time ──
-//   (Configuration desc + AC portion + AS portion)
-#define UAC2_AC_DESC_LEN  ( \
-    TUD_AUDIO_DESC_IAD_LEN    + \
-    TUD_AUDIO_DESC_STD_AC_LEN + \
-    TUD_AUDIO_DESC_CS_AC_LEN  + \
-    TUD_AUDIO_DESC_CLK_SRC_LEN + \
-    TUD_AUDIO_DESC_INPUT_TERM_LEN + \
-    TUD_AUDIO_DESC_FEATURE_UNIT_LEN(2) + \
-    TUD_AUDIO_DESC_OUTPUT_TERM_LEN \
-)
-
-#define UAC2_AS_DESC_LEN  ( \
-    /* two alt‑settings */ \
-    TUD_AUDIO_DESC_STD_AS_INT_LEN*2 + \
-    TUD_AUDIO_DESC_CS_AS_INT_LEN    + \
-    TUD_AUDIO_DESC_TYPE_I_FORMAT_LEN + \
-    TUD_AUDIO_DESC_SAMPLE_RATE_LEN   + \
-    TUD_AUDIO_DESC_STD_AS_ISO_EP_LEN + \
-    TUD_AUDIO_DESC_CS_AS_ISO_EP_LEN \
-)
-
-#define TOTAL_DESC_LEN (TUD_CONFIG_DESC_LEN + UAC2_AC_DESC_LEN + UAC2_AS_DESC_LEN)
-
-// ── Tell the TinyUSB Audio driver how big our function descriptor is ───
-#define TUD_AUDIO_DESC_FUNC_LEN TOTAL_DESC_LEN
-// ── And how many Streaming Standard AS interfaces we declared ───────────
-#define TUD_AUDIO_DESC_AS_INTFS 1
-
-#include "class/audio/audio_device.h"
-
-// ── Our single, monolithic FS configuration descriptor ────────────────────
-static const uint8_t desc_fs_configuration[] = {
-    TUD_CONFIG_DESCRIPTOR(2, 1, 0, TOTAL_DESC_LEN, 0x00, 100),
-
-    // Audio Function IAD: control + 1 streaming interface, UAC2 protocol
-    TUD_AUDIO_DESC_IAD(0, 1, AUDIO_FUNC_PROTOCOL_CODE_V2),
-
-    // Standard AC interface
-    TUD_AUDIO_DESC_STD_AC(0, 0, 1),
-    TUD_AUDIO_DESC_CS_AC(0x0200, AUDIO_FUNC_MICROPHONE, UAC2_AC_DESC_LEN - (TUD_AUDIO_DESC_IAD_LEN + TUD_AUDIO_DESC_STD_AC_LEN), AC_CTRL_SAM_FREQ),
-
-    // Clock source for UAC2
-    TUD_AUDIO_DESC_CLK_SRC(1, AC_ATTR_INTERNAL_FIXED, AC_CTRL_SAM_FREQ, 0, 0),
-
-    // Input Term (USB streaming sink)
-    TUD_AUDIO_DESC_INPUT_TERM(2, AUDIO_TERM_TYPE_USB_STREAMING, 0, 1, 1, 0x0001, 0, 0x00),
-
-    // Feature Unit (master + 1 channel)
-    TUD_AUDIO_DESC_FEATURE_UNIT(3, 2, 2, 0x0001, 0),
-
-    // Output Term (to headphones/speaker)
-    TUD_AUDIO_DESC_OUTPUT_TERM(4, AUDIO_TERM_TYPE_OUT_HEADPHONES, 0, 3, 1, 0, 0),
-
-    // Streaming interface, alt‑0 (zero bandwidth)
-    TUD_AUDIO_DESC_STD_AS_INT(1, 0, 0, 0),
-
-    // Streaming interface, alt‑1 (active)
-    TUD_AUDIO_DESC_STD_AS_INT(1, 1, 1, 0),
-
-    TUD_AUDIO_DESC_CS_AS_INT(2, 0, AUDIO_FORMAT_TYPE_I, AUDIO_DATA_FORMAT_TYPE_I_PCM, 1, 0x0001, 0),
-    TUD_AUDIO_DESC_TYPE_I_FORMAT(3, 24),
-    TUD_AUDIO_DESC_SAMPLE_RATE(SAMPLE_RATE, SAMPLE_RATE),
-
-    // Isochronous IN endpoint (0x81)
-    TUD_AUDIO_DESC_STD_AS_ISO_EP(0x81, TUSB_XFER_ISOCHRONOUS, (3 * SAMPLE_RATE / 1000), 1),
-    TUD_AUDIO_DESC_CS_AS_ISO_EP(AUDIO_CS_AS_ISO_DATA_EP_ATT_ADAPTIVE_SYNC, AUDIO_CTRL_NONE, 0, 0),
-};
-#include <stdlib.h>  // For abs()
-#include <float.h>   // For FLT_MAX
+ #include "tusb.h"
+ #include <stdlib.h>  // For abs()
+ #include <float.h>   // For FLT_MAX
  
  /**********************************************
   *            Hardware Configuration          *
@@ -754,7 +672,7 @@ static const uint8_t desc_fs_configuration[] = {
  void handle_usb_status() {
      bool is_connected = tud_mounted();
      
-     if(is_connected && !usb_was_connected) {
+     if(is_connected != usb_was_connected) {
          // Reset all buffers on new connection
          for(int i=0; i<3; i++) {
              buffers[i].state = BUF_STATE_EMPTY;
@@ -795,12 +713,9 @@ static const uint8_t desc_fs_configuration[] = {
      (void) ep_in;
      (void) cur_alt_setting;
      
-     if (cur_alt_setting == 0) return false;  // Streaming is disabled
-     if (buffers[active_usb_buf].state != BUF_STATE_READY) return false;
+     if (cur_alt_setting == 0) return false; 
      
      // Use the active buffer as our source
-     tud_audio_write((uint8_t *)buffers[active_usb_buf].samples, 
-                     buffers[active_usb_buf].actual_frames * NUM_CHANNELS * (BIT_DEPTH/8));
      
      return true;
  }
